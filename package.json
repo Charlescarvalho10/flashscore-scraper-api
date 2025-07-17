@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "description": "Scraper de jogos ao vivo do Flashscore com análise preditiva",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "postinstall": "playwright install --with-deps"
+    "postinstall": "npx playwright install --with-deps"
   },
-  "keywords": [],
+  "keywords": ["flashscore", "scraper", "futebol", "apostas", "playwright", "railway"],
   "author": "SeuNome",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
     "playwright": "^1.54.1"
