@@ -1,34 +1,36 @@
-const express = require("express");
-const { chromium } = require("playwright");
+import express from 'express';
+import { chromium } from 'playwright';
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
-app.get("/jogos", async (req, res) => {
-    const browser = await chromium.launch({ headless: true });
+app.get('/jogos', async (req, res) => {
+  try {
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox']
+    });
+
     const page = await browser.newPage();
-    await page.goto("https://www.flashscore.com", { timeout: 60000 });
+    await page.goto('https://www.flashscore.com', { timeout: 60000 });
 
-    // Exemplo de scraping (ajuste conforme necessidade real)
-    const jogos = await page.evaluate(() => {
-        return Array.from(document.querySelectorAll(".event__match"))
-            .map(el => ({
-                id: el.getAttribute("id"),
-                time: el.querySelector(".event__time")?.textContent,
-                home: el.querySelector(".event__participant--home")?.textContent,
-                away: el.querySelector(".event__participant--away")?.textContent,
-                score: el.querySelector(".event__scores")?.textContent,
-            }));
+    // Exemplo de scraping básico
+    const data = await page.evaluate(() => {
+      return {
+        status: 'ok',
+        hora: new Date().toLocaleTimeString(),
+        titulo: document.title
+      };
     });
 
     await browser.close();
-    res.json({ jogos });
+    res.json(data);
+  } catch (error) {
+    console.error('Erro ao acessar /jogos:', error);
+    res.status(500).json({ error: 'Erro ao coletar dados' });
+  }
 });
 
-app.get("/", (req, res) => {
-    res.send("API do Flashscore Scraper está online!");
-});
-
-app.listen(port, () => {
-    console.log(`Servidor rodando em http://localhost:${port}`);
+app.listen(PORT, () => {
+  console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
