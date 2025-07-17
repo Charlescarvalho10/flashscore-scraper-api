@@ -1,5 +1,5 @@
-import express from 'express';
-import { chromium } from 'playwright';
+const express = require('express');
+const { chromium } = require('playwright');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,14 +12,13 @@ app.get('/jogos', async (req, res) => {
     await page.goto('https://www.flashscore.com/', { timeout: 60000 });
     await page.waitForSelector('.event__match', { timeout: 15000 });
 
-    const jogos = await page.$$eval('.event__match', matches => {
+    const jogos = await page.$$eval('.event__match', (matches) => {
       const dataHoje = new Date().toISOString().split('T')[0];
-
-      const resultados: any[] = [];
+      const resultados = [];
       let ligaAtual = "Desconhecida";
 
       for (let i = 0; i < matches.length && resultados.length < 10; i++) {
-        const match = matches[i] as HTMLElement;
+        const match = matches[i];
 
         const header = match.previousElementSibling?.classList.contains('event__header')
           ? match.previousElementSibling
@@ -74,14 +73,13 @@ app.get('/jogos', async (req, res) => {
   }
 });
 
-async function getUltimos5JogosStats(browser, nomeTime: string) {
+async function getUltimos5JogosStats(browser, nomeTime) {
   const context = await browser.newContext();
   const page = await context.newPage();
   const stats = [];
 
   try {
     await page.goto('https://www.flashscore.com/', { timeout: 60000 });
-
     await page.fill('input[type="search"]', nomeTime);
     await page.waitForTimeout(1000);
     await page.keyboard.press('Enter');
@@ -122,7 +120,7 @@ async function getUltimos5JogosStats(browser, nomeTime: string) {
     });
 
     stats.push(...jogos);
-  } catch (e: any) {
+  } catch (e) {
     console.error(`Erro ao buscar jogos do time ${nomeTime}:`, e.message);
   } finally {
     await context.close();
@@ -133,7 +131,6 @@ async function getUltimos5JogosStats(browser, nomeTime: string) {
 
 function calcularProbabilidades({ timeA, timeB }) {
   const todosJogos = [...timeA, ...timeB];
-
   const total = todosJogos.length || 1;
   const somaGols = todosJogos.reduce((acc, j) => acc + j.totalGols, 0);
   const mediaGols = somaGols / total;
@@ -142,7 +139,6 @@ function calcularProbabilidades({ timeA, timeB }) {
   const over35 = todosJogos.filter(j => j.totalGols > 3.5).length / total;
   const ambasMarcam = todosJogos.filter(j => j.golsFeitos > 0 && j.golsSofridos > 0).length / total;
 
-  // Simulações ainda, pois Flashscore não mostra escanteios/cartões em lista
   const escanteios5Mais = Math.min(1, Math.random() * 0.6 + 0.4);
   const cartoes = Math.min(1, Math.random() * 0.5 + 0.3);
 
