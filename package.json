@@ -1,13 +1,18 @@
 {
-  "name": "flashscore-scraper-api",
+  "name": "flashscore-scraper",
   "version": "1.0.0",
-  "description": "Scraper do Flashscore com Playwright",
+  "description": "Scraper de jogos ao vivo do Flashscore com análise preditiva",
   "main": "index.js",
+  "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "playwright install --with-deps"
   },
+  "keywords": [],
+  "author": "SeuNome",
+  "license": "ISC",
   "dependencies": {
     "express": "^4.18.2",
-    "playwright": "^1.42.1"
+    "playwright": "^1.54.1"
   }
 }
