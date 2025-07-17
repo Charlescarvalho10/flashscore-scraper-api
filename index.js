@@ -4,6 +4,74 @@ const { chromium } = require('playwright');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+async function buscarUltimos5Jogos(time, page) {
+  try {
+    await page.goto('https://www.flashscore.com/', { timeout: 60000 });
+    await page.waitForSelector('input[type="search"]', { timeout: 15000 });
+
+    await page.fill('input[type="search"]', time);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(2000);
+
+    const teamLink = await page.$('a[href*="/team/"]');
+    if (!teamLink) throw new Error('Time não encontrado');
+
+    await teamLink.click();
+    await page.waitForSelector('.tabs__text--default', { timeout: 15000 });
+
+    const resultados = [];
+
+    // Tentar acessar a aba "Resultados"
+    const btnResultados = await page.$('a[href*="results/"]');
+    if (btnResultados) {
+      await btnResultados.click();
+      await page.waitForTimeout(2000);
+    }
+
+    const partidas = await page.$$('.event__match--static');
+    for (let i = 0; i < Math.min(5, partidas.length); i++) {
+      const golsA = await partidas[i].$eval('.event__score--home', el => parseInt(el.textContent.trim()));
+      const golsB = await partidas[i].$eval('.event__score--away', el => parseInt(el.textContent.trim()));
+      const cartoes = Math.floor(Math.random() * 7); // Placeholder até ter fonte real
+      const escanteios = Math.floor(Math.random() * 12); // Placeholder até ter fonte real
+
+      resultados.push({ golsA, golsB, escanteios, cartoes });
+    }
+
+    return resultados;
+  } catch (err) {
+    console.error(`Erro ao buscar últimos 5 jogos do time ${time}:`, err.message);
+    return [];
+  }
+}
+
+function calcularProbabilidades(jogos) {
+  if (!jogos.length) return {
+    ambasMarcam: 0,
+    over15: 0,
+    over35: 0,
+    escanteios5Mais: 0,
+    mediaGols: 0,
+    mediaCartoes: 0
+  };
+
+  const ambas = jogos.filter(j => j.golsA > 0 && j.golsB > 0).length;
+  const over15 = jogos.filter(j => j.golsA + j.golsB > 1.5).length;
+  const over35 = jogos.filter(j => j.golsA + j.golsB > 3.5).length;
+  const escanteios = jogos.filter(j => j.escanteios >= 5).length;
+  const mediaGols = jogos.reduce((s, j) => s + j.golsA + j.golsB, 0) / jogos.length;
+  const mediaCartoes = jogos.reduce((s, j) => s + j.cartoes, 0) / jogos.length;
+
+  return {
+    ambasMarcam: (ambas / jogos.length).toFixed(2),
+    over15: (over15 / jogos.length).toFixed(2),
+    over35: (over35 / jogos.length).toFixed(2),
+    escanteios5Mais: (escanteios / jogos.length).toFixed(2),
+    mediaGols: mediaGols.toFixed(2),
+    mediaCartoes: mediaCartoes.toFixed(2)
+  };
+}
+
 app.get('/jogos', async (req, res) => {
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
@@ -14,143 +82,56 @@ app.get('/jogos', async (req, res) => {
 
     const jogos = await page.$$eval('.event__match', (matches) => {
       const dataHoje = new Date().toISOString().split('T')[0];
-      const resultados = [];
-      let ligaAtual = "Desconhecida";
+      const jogosDia = [];
 
-      for (let i = 0; i < matches.length && resultados.length < 10; i++) {
-        const match = matches[i];
-
-        const header = match.previousElementSibling?.classList.contains('event__header')
-          ? match.previousElementSibling
-          : match.closest('.event__match')?.previousElementSibling;
-
-        if (header?.querySelector('.event__title')) {
-          ligaAtual = header.querySelector('.event__title')?.textContent?.trim() || ligaAtual;
-        }
-
+      for (const match of matches.slice(0, 10)) {
+        const liga = match.closest('.event__header')?.querySelector('.event__title')?.textContent?.trim() || "Desconhecida";
         const timeA = match.querySelector('.event__participant--home')?.textContent?.trim() || "Time A";
         const timeB = match.querySelector('.event__participant--away')?.textContent?.trim() || "Time B";
         const hora = match.querySelector('.event__time')?.textContent?.trim() || "";
 
-        resultados.push({
-          data: dataHoje,
-          hora,
-          liga: ligaAtual,
-          timeA,
-          timeB
-        });
+        jogosDia.push({ data: dataHoje, hora, liga, timeA, timeB });
       }
 
-      return resultados;
+      return jogosDia;
     });
 
-    const enrichedJogos = [];
-
     for (const jogo of jogos) {
-      const stats = {
-        timeA: await getUltimos5JogosStats(browser, jogo.timeA),
-        timeB: await getUltimos5JogosStats(browser, jogo.timeB)
+      const pageTimeA = await browser.newPage();
+      const pageTimeB = await browser.newPage();
+
+      const ultimosA = await buscarUltimos5Jogos(jogo.timeA, pageTimeA);
+      const ultimosB = await buscarUltimos5Jogos(jogo.timeB, pageTimeB);
+
+      await pageTimeA.close();
+      await pageTimeB.close();
+
+      const probA = calcularProbabilidades(ultimosA);
+      const probB = calcularProbabilidades(ultimosB);
+
+      jogo.probabilidades = {
+        ambasMarcam: ((+probA.ambasMarcam + +probB.ambasMarcam) / 2).toFixed(2),
+        over15: ((+probA.over15 + +probB.over15) / 2).toFixed(2),
+        over35: ((+probA.over35 + +probB.over35) / 2).toFixed(2),
+        escanteios5Mais: ((+probA.escanteios5Mais + +probB.escanteios5Mais) / 2).toFixed(2),
+        mediaGols: ((+probA.mediaGols + +probB.mediaGols) / 2).toFixed(2),
+        mediaCartoes: ((+probA.mediaCartoes + +probB.mediaCartoes) / 2).toFixed(2)
       };
-
-      const probabilidades = calcularProbabilidades(stats);
-
-      enrichedJogos.push({
-        ...jogo,
-        probabilidades
-      });
     }
 
     res.json({
       status: 'ok',
       atualizado: new Date().toISOString(),
-      jogos: enrichedJogos
+      jogos
     });
-  } catch (error) {
-    console.error('Erro no /jogos:', error.message);
-    res.status(500).json({ erro: 'Erro ao coletar dados dos jogos' });
+
+  } catch (e) {
+    console.error('Erro geral:', e.message);
+    res.status(500).json({ erro: 'Erro ao coletar os jogos' });
   } finally {
     await browser.close();
   }
 });
-
-async function getUltimos5JogosStats(browser, nomeTime) {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  const stats = [];
-
-  try {
-    await page.goto('https://www.flashscore.com/', { timeout: 60000 });
-    await page.fill('input[type="search"]', nomeTime);
-    await page.waitForTimeout(1000);
-    await page.keyboard.press('Enter');
-    await page.waitForSelector('a.participant__image', { timeout: 10000 });
-
-    const resultado = await page.$$eval('a.participant__image', (links, nomeTime) => {
-      const link = links.find(a => a.textContent?.toLowerCase().includes(nomeTime.toLowerCase()));
-      return link?.getAttribute('href') || links[0]?.getAttribute('href');
-    }, nomeTime);
-
-    if (!resultado) throw new Error('Time não encontrado');
-
-    await page.goto(`https://www.flashscore.com${resultado}`);
-    await page.waitForSelector('.tabs__tab', { timeout: 15000 });
-
-    const tabIndex = await page.$$eval('.tabs__tab', tabs => {
-      const index = tabs.findIndex(t => t.textContent?.toLowerCase().includes('results'));
-      return index >= 0 ? index : 1;
-    });
-
-    const tabs = await page.$$('.tabs__tab');
-    await tabs[tabIndex].click();
-
-    await page.waitForSelector('.event__match--static', { timeout: 15000 });
-
-    const jogos = await page.$$eval('.event__match--static', (rows) => {
-      return rows.slice(0, 5).map(row => {
-        const placar = row.querySelector('.event__scores')?.textContent?.trim() || '';
-        const partes = placar.split(':');
-        const golsCasa = parseInt(partes[0]) || 0;
-        const golsFora = parseInt(partes[1]) || 0;
-        return {
-          golsFeitos: golsCasa,
-          golsSofridos: golsFora,
-          totalGols: golsCasa + golsFora
-        };
-      });
-    });
-
-    stats.push(...jogos);
-  } catch (e) {
-    console.error(`Erro ao buscar jogos do time ${nomeTime}:`, e.message);
-  } finally {
-    await context.close();
-  }
-
-  return stats;
-}
-
-function calcularProbabilidades({ timeA, timeB }) {
-  const todosJogos = [...timeA, ...timeB];
-  const total = todosJogos.length || 1;
-  const somaGols = todosJogos.reduce((acc, j) => acc + j.totalGols, 0);
-  const mediaGols = somaGols / total;
-
-  const over15 = todosJogos.filter(j => j.totalGols > 1.5).length / total;
-  const over35 = todosJogos.filter(j => j.totalGols > 3.5).length / total;
-  const ambasMarcam = todosJogos.filter(j => j.golsFeitos > 0 && j.golsSofridos > 0).length / total;
-
-  const escanteios5Mais = Math.min(1, Math.random() * 0.6 + 0.4);
-  const cartoes = Math.min(1, Math.random() * 0.5 + 0.3);
-
-  return {
-    ambasMarcam: ambasMarcam.toFixed(2),
-    over15: over15.toFixed(2),
-    over35: over35.toFixed(2),
-    mediaGols: mediaGols.toFixed(2),
-    escanteios5Mais: escanteios5Mais.toFixed(2),
-    cartoes: cartoes.toFixed(2)
-  };
-}
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
