@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Scraper de jogos ao vivo do Flashscore com análise preditiva",
   "main": "index.js",
-  "type": "module",
   "scripts": {
     "start": "node index.js",
     "postinstall": "playwright install --with-deps"
